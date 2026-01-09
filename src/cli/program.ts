@@ -26,6 +26,8 @@ import {
 } from "../config/config.js";
 import { danger, setVerbose } from "../globals.js";
 import { autoMigrateLegacyState } from "../infra/state-migrations.js";
+import { listProviderPlugins } from "../providers/plugins/index.js";
+import { DEFAULT_CHAT_PROVIDER } from "../providers/registry.js";
 import { defaultRuntime } from "../runtime.js";
 import { isRich, theme } from "../terminal/theme.js";
 import { VERSION } from "../version.js";
@@ -63,6 +65,9 @@ function collectOption(value: string, previous: string[] = []): string[] {
 export function buildProgram() {
   const program = new Command();
   const PROGRAM_VERSION = VERSION;
+  const providerOptions = listProviderPlugins().map((plugin) => plugin.id);
+  const messageProviderOptions = providerOptions.join("|");
+  const agentProviderOptions = ["last", ...providerOptions].join("|");
 
   program
     .name("clawdbot")
@@ -507,7 +512,7 @@ Examples:
     command
       .option(
         "--provider <provider>",
-        "Provider: whatsapp|telegram|discord|slack|signal|imessage",
+        `Provider: ${messageProviderOptions}`,
       )
       .option("--account <id>", "Provider account id")
       .option("--json", "Output result as JSON", false)
@@ -975,7 +980,7 @@ Examples:
     .option("--verbose <on|off>", "Persist agent verbose level for the session")
     .option(
       "--provider <provider>",
-      "Delivery provider: whatsapp|telegram|discord|slack|signal|imessage (default: whatsapp)",
+      `Delivery provider: ${agentProviderOptions} (default: ${DEFAULT_CHAT_PROVIDER})`,
     )
     .option(
       "--local",

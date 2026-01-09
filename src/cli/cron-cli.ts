@@ -1,10 +1,16 @@
 import type { Command } from "commander";
 import type { CronJob, CronSchedule } from "../cron/types.js";
 import { danger } from "../globals.js";
+import { listProviderPlugins } from "../providers/plugins/index.js";
 import { defaultRuntime } from "../runtime.js";
 import { colorize, isRich, theme } from "../terminal/theme.js";
 import type { GatewayRpcOpts } from "./gateway-rpc.js";
 import { addGatewayClientOptions, callGatewayFromCli } from "./gateway-rpc.js";
+
+const CRON_PROVIDER_OPTIONS = [
+  "last",
+  ...listProviderPlugins().map((plugin) => plugin.id),
+].join("|");
 
 async function warnIfCronSchedulerDisabled(opts: GatewayRpcOpts) {
   try {
@@ -291,7 +297,7 @@ export function registerCronCli(program: Command) {
       .option("--deliver", "Deliver agent output", false)
       .option(
         "--provider <provider>",
-        "Delivery provider (last|whatsapp|telegram|discord|slack|signal|imessage)",
+        `Delivery provider (${CRON_PROVIDER_OPTIONS})`,
         "last",
       )
       .option(
@@ -553,7 +559,7 @@ export function registerCronCli(program: Command) {
       .option("--deliver", "Deliver agent output", false)
       .option(
         "--provider <provider>",
-        "Delivery provider (last|whatsapp|telegram|discord|slack|signal|imessage)",
+        `Delivery provider (${CRON_PROVIDER_OPTIONS})`,
       )
       .option(
         "--to <dest>",
