@@ -586,6 +586,14 @@ export const ProvidersStatusParamsSchema = Type.Object(
   { additionalProperties: false },
 );
 
+export const ProvidersLogoutParamsSchema = Type.Object(
+  {
+    provider: NonEmptyString,
+    accountId: Type.Optional(Type.String()),
+  },
+  { additionalProperties: false },
+);
+
 export const WebLoginStartParamsSchema = Type.Object(
   {
     force: Type.Optional(Type.Boolean()),
@@ -974,6 +982,7 @@ export const ProtocolSchemas: Record<string, TSchema> = {
   WizardStatusResult: WizardStatusResultSchema,
   TalkModeParams: TalkModeParamsSchema,
   ProvidersStatusParams: ProvidersStatusParamsSchema,
+  ProvidersLogoutParams: ProvidersLogoutParamsSchema,
   WebLoginStartParams: WebLoginStartParamsSchema,
   WebLoginWaitParams: WebLoginWaitParamsSchema,
   AgentSummary: AgentSummarySchema,
@@ -1051,6 +1060,7 @@ export type WizardStartResult = Static<typeof WizardStartResultSchema>;
 export type WizardStatusResult = Static<typeof WizardStatusResultSchema>;
 export type TalkModeParams = Static<typeof TalkModeParamsSchema>;
 export type ProvidersStatusParams = Static<typeof ProvidersStatusParamsSchema>;
+export type ProvidersLogoutParams = Static<typeof ProvidersLogoutParamsSchema>;
 export type WebLoginStartParams = Static<typeof WebLoginStartParamsSchema>;
 export type WebLoginWaitParams = Static<typeof WebLoginWaitParamsSchema>;
 export type AgentSummary = Static<typeof AgentSummarySchema>;
