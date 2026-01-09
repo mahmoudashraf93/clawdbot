@@ -56,6 +56,11 @@ import {
   normalizeOutboundPayloadsForJson,
 } from "../infra/outbound/payloads.js";
 import { resolveOutboundTarget } from "../infra/outbound/targets.js";
+import {
+  getProviderPlugin,
+  normalizeProviderId,
+} from "../providers/plugins/index.js";
+import type { ProviderOutboundTargetMode } from "../providers/plugins/types.js";
 import { normalizeMainKey } from "../routing/session-key.js";
 import { defaultRuntime, type RuntimeEnv } from "../runtime.js";
 import { resolveSendPolicy } from "../sessions/send-policy.js";
@@ -63,7 +68,6 @@ import {
   normalizeMessageProvider,
   resolveMessageProvider,
 } from "../utils/message-provider.js";
-import { normalizeE164 } from "../utils.js";
 
 type AgentCommandOpts = {
   message: string;
@@ -79,6 +83,7 @@ type AgentCommandOpts = {
   /** Message provider context (webchat|voicewake|whatsapp|...). */
   messageProvider?: string;
   provider?: string; // delivery provider (whatsapp|telegram|...)
+  deliveryTargetMode?: ProviderOutboundTargetMode;
   bestEffortDeliver?: boolean;
   abortSignal?: AbortSignal;
   lane?: string;
@@ -191,10 +196,6 @@ export async function agentCommand(
     ensureBootstrapFiles: !agentCfg?.skipBootstrap,
   });
   const workspaceDir = workspace.dir;
-
-  const allowFrom = (cfg.whatsapp?.allowFrom ?? [])
-    .map((val) => normalizeE164(val))
-    .filter((val) => val.length > 1);
 
   const thinkOverride = normalizeThinkLevel(opts.thinking);
   const thinkOnce = normalizeThinkLevel(opts.thinkingOnce);
@@ -553,8 +554,16 @@ export async function agentCommand(
   const payloads = result.payloads ?? [];
   const deliver = opts.deliver === true;
   const bestEffortDeliver = opts.bestEffortDeliver === true;
-  const deliveryProvider =
+  const deliveryProviderRaw =
     normalizeMessageProvider(opts.provider) ?? "whatsapp";
+  const deliveryProvider =
+    deliveryProviderRaw === "webchat"
+      ? "webchat"
+      : normalizeProviderId(deliveryProviderRaw);
+  const deliveryPlugin =
+    deliveryProvider && deliveryProvider !== "webchat"
+      ? getProviderPlugin(deliveryProvider)
+      : undefined;
 
   const logDeliveryError = (err: unknown) => {
     const message = `Delivery failed (${deliveryProvider}${deliveryTarget ? ` to ${deliveryTarget}` : ""}): ${String(err)}`;
@@ -563,22 +572,18 @@ export async function agentCommand(
   };
 
   const isDeliveryProviderKnown =
-    deliveryProvider === "whatsapp" ||
-    deliveryProvider === "telegram" ||
-    deliveryProvider === "discord" ||
-    deliveryProvider === "slack" ||
-    deliveryProvider === "signal" ||
-    deliveryProvider === "imessage" ||
-    deliveryProvider === "msteams" ||
-    deliveryProvider === "webchat";
+    deliveryProvider === "webchat" || Boolean(deliveryPlugin);
 
+  const targetMode: ProviderOutboundTargetMode =
+    opts.deliveryTargetMode ?? (opts.to ? "explicit" : "implicit");
   const resolvedTarget =
-    deliver && isDeliveryProviderKnown
+    deliver && isDeliveryProviderKnown && deliveryProvider
       ? resolveOutboundTarget({
           provider: deliveryProvider,
           to: opts.to,
-          allowFrom,
           cfg,
+          accountId: targetMode === "implicit" ? sessionEntry?.lastAccountId : undefined,
+          mode: targetMode,
         })
       : null;
   const deliveryTarget = resolvedTarget?.ok ? resolvedTarget.to : undefined;
@@ -629,13 +634,8 @@ export async function agentCommand(
   }
   if (
     deliver &&
-    (deliveryProvider === "whatsapp" ||
-      deliveryProvider === "telegram" ||
-      deliveryProvider === "discord" ||
-      deliveryProvider === "slack" ||
-      deliveryProvider === "signal" ||
-      deliveryProvider === "imessage" ||
-      deliveryProvider === "msteams")
+    deliveryProvider &&
+    deliveryProvider !== "webchat"
   ) {
     if (deliveryTarget) {
       await deliverOutboundPayloads({

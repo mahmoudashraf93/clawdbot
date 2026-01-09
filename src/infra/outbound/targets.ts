@@ -1,18 +1,15 @@
 import type { ClawdbotConfig } from "../../config/config.js";
 import type { SessionEntry } from "../../config/sessions.js";
-import { getProviderPlugin } from "../../providers/plugins/index.js";
-import type { ProviderId } from "../../providers/plugins/types.js";
-import { normalizeE164 } from "../../utils.js";
+import {
+  getProviderPlugin,
+  normalizeProviderId,
+} from "../../providers/plugins/index.js";
+import type {
+  ProviderId,
+  ProviderOutboundTargetMode,
+} from "../../providers/plugins/types.js";
 
-export type OutboundProvider =
-  | "whatsapp"
-  | "telegram"
-  | "discord"
-  | "slack"
-  | "signal"
-  | "imessage"
-  | "msteams"
-  | "none";
+export type OutboundProvider = ProviderId | "none";
 
 export type HeartbeatTarget = OutboundProvider | "last";
 
@@ -27,117 +24,53 @@ export type OutboundTargetResolution =
   | { ok: false; error: Error };
 
 export function resolveOutboundTarget(params: {
-  provider:
-    | "whatsapp"
-    | "telegram"
-    | "discord"
-    | "slack"
-    | "signal"
-    | "imessage"
-    | "msteams"
-    | "webchat";
+  provider: ProviderId | "webchat" | "none";
   to?: string;
   allowFrom?: string[];
   cfg?: ClawdbotConfig;
+  accountId?: string | null;
+  mode?: ProviderOutboundTargetMode;
 }): OutboundTargetResolution {
-  const plugin =
-    params.provider === "webchat"
-      ? undefined
-      : getProviderPlugin(params.provider as ProviderId);
-  const resolver = plugin?.outbound?.resolveTarget;
-  if (resolver) {
-    return resolver({
-      cfg: params.cfg,
-      to: params.to,
-      allowFrom: params.allowFrom,
-    });
+  if (params.provider === "none") {
+    return {
+      ok: false,
+      error: new Error("Provider 'none' cannot send messages."),
+    };
   }
-  const trimmed = params.to?.trim() || "";
-  if (params.provider === "whatsapp") {
-    if (trimmed) {
-      return { ok: true, to: normalizeE164(trimmed) };
-    }
-    const fallback = params.allowFrom?.[0]?.trim();
-    if (fallback) {
-      return { ok: true, to: fallback };
-    }
+  if (params.provider === "webchat") {
     return {
       ok: false,
       error: new Error(
-        "Delivering to WhatsApp requires --to <E.164> or whatsapp.allowFrom[0]",
+        "Delivering to WebChat is not supported via `clawdbot agent`; use WhatsApp/Telegram or run with --deliver=false.",
       ),
     };
   }
-  if (params.provider === "telegram") {
-    if (!trimmed) {
-      return {
-        ok: false,
-        error: new Error("Delivering to Telegram requires --to <chatId>"),
-      };
-    }
-    return { ok: true, to: trimmed };
+
+  const plugin = getProviderPlugin(params.provider);
+  const resolver = plugin?.outbound?.resolveTarget;
+  if (!plugin || !resolver) {
+    return {
+      ok: false,
+      error: new Error(`Unsupported provider: ${params.provider}`),
+    };
   }
-  if (params.provider === "discord") {
-    if (!trimmed) {
-      return {
-        ok: false,
-        error: new Error(
-          "Delivering to Discord requires --to <channelId|user:ID|channel:ID>",
-        ),
-      };
-    }
-    return { ok: true, to: trimmed };
-  }
-  if (params.provider === "slack") {
-    if (!trimmed) {
-      return {
-        ok: false,
-        error: new Error(
-          "Delivering to Slack requires --to <channelId|user:ID|channel:ID>",
-        ),
-      };
-    }
-    return { ok: true, to: trimmed };
-  }
-  if (params.provider === "signal") {
-    if (!trimmed) {
-      return {
-        ok: false,
-        error: new Error(
-          "Delivering to Signal requires --to <E.164|group:ID|signal:group:ID|signal:+E.164>",
-        ),
-      };
-    }
-    return { ok: true, to: trimmed };
-  }
-  if (params.provider === "imessage") {
-    if (!trimmed) {
-      return {
-        ok: false,
-        error: new Error(
-          "Delivering to iMessage requires --to <handle|chat_id:ID>",
-        ),
-      };
-    }
-    return { ok: true, to: trimmed };
-  }
-  if (params.provider === "msteams") {
-    if (!trimmed) {
-      return {
-        ok: false,
-        error: new Error(
-          "Delivering to MS Teams requires --to <conversationId|user:ID|conversation:ID>",
-        ),
-      };
-    }
-    return { ok: true, to: trimmed };
-  }
-  return {
-    ok: false,
-    error: new Error(
-      "Delivering to WebChat is not supported via `clawdbot agent`; use WhatsApp/Telegram or run with --deliver=false.",
-    ),
-  };
+
+  const allowFrom =
+    params.allowFrom ??
+    (params.cfg && plugin.config.resolveAllowFrom
+      ? plugin.config.resolveAllowFrom({
+          cfg: params.cfg,
+          accountId: params.accountId,
+        })
+      : undefined);
+
+  return resolver({
+    cfg: params.cfg,
+    to: params.to,
+    allowFrom,
+    accountId: params.accountId,
+    mode: params.mode,
+  });
 }
 
 export function resolveHeartbeatDeliveryTarget(params: {
@@ -146,18 +79,13 @@ export function resolveHeartbeatDeliveryTarget(params: {
 }): OutboundTarget {
   const { cfg, entry } = params;
   const rawTarget = cfg.agents?.defaults?.heartbeat?.target;
-  const target: HeartbeatTarget =
-    rawTarget === "whatsapp" ||
-    rawTarget === "telegram" ||
-    rawTarget === "discord" ||
-    rawTarget === "slack" ||
-    rawTarget === "signal" ||
-    rawTarget === "imessage" ||
-    rawTarget === "msteams" ||
-    rawTarget === "none" ||
-    rawTarget === "last"
-      ? rawTarget
-      : "last";
+  const target = (() => {
+    if (typeof rawTarget !== "string") return "last" as const;
+    const trimmed = rawTarget.trim().toLowerCase();
+    if (!trimmed) return "last" as const;
+    if (trimmed === "none" || trimmed === "last") return trimmed;
+    return normalizeProviderId(trimmed) ?? "last";
+  })();
   if (target === "none") {
     return { provider: "none", reason: "target-none" };
   }
@@ -170,62 +98,29 @@ export function resolveHeartbeatDeliveryTarget(params: {
 
   const lastProvider =
     entry?.lastProvider && entry.lastProvider !== "webchat"
-      ? entry.lastProvider
+      ? normalizeProviderId(entry.lastProvider)
       : undefined;
   const lastTo = typeof entry?.lastTo === "string" ? entry.lastTo.trim() : "";
 
-  const provider:
-    | "whatsapp"
-    | "telegram"
-    | "discord"
-    | "slack"
-    | "signal"
-    | "imessage"
-    | "msteams"
-    | undefined =
-    target === "last"
-      ? lastProvider
-      : target === "whatsapp" ||
-          target === "telegram" ||
-          target === "discord" ||
-          target === "slack" ||
-          target === "signal" ||
-          target === "imessage" ||
-          target === "msteams"
-        ? target
-        : undefined;
-
-  const to =
+  const provider = target === "last" ? lastProvider : target;
+  const toCandidate =
     explicitTo ||
     (provider && lastProvider === provider ? lastTo : undefined) ||
     (target === "last" ? lastTo : undefined);
 
-  if (!provider || !to) {
+  if (!provider || !toCandidate) {
     return { provider: "none", reason: "no-target" };
   }
 
-  if (provider !== "whatsapp") {
-    const resolved = resolveOutboundTarget({ provider, to, cfg });
-    return resolved.ok
-      ? { provider, to: resolved.to }
-      : { provider: "none", reason: "no-target" };
-  }
-
-  const rawAllow = cfg.whatsapp?.allowFrom ?? [];
+  const mode: ProviderOutboundTargetMode = explicitTo ? "explicit" : "heartbeat";
   const resolved = resolveOutboundTarget({
-    provider: "whatsapp",
-    to,
-    allowFrom: rawAllow,
+    provider,
+    to: toCandidate,
     cfg,
+    accountId: target === "last" ? entry?.lastAccountId : undefined,
+    mode,
   });
-  if (!resolved.ok) {
-    return { provider: "none", reason: "no-target" };
-  }
-  if (rawAllow.includes("*")) return { provider, to: resolved.to };
-  const allowFrom = rawAllow
-    .map((val) => normalizeE164(val))
-    .filter((val) => val.length > 1);
-  if (allowFrom.length === 0) return { provider, to: resolved.to };
-  if (allowFrom.includes(resolved.to)) return { provider, to: resolved.to };
-  return { provider, to: allowFrom[0], reason: "allowFrom-fallback" };
+  return resolved.ok
+    ? { provider, to: resolved.to }
+    : { provider: "none", reason: "no-target" };
 }

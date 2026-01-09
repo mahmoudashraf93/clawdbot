@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 
 import { agentCommand } from "../../commands/agent.js";
-import { loadConfig } from "../../config/config.js";
 import {
   resolveAgentIdFromSessionKey,
   resolveAgentMainSessionKey,
@@ -9,11 +8,13 @@ import {
   saveSessionStore,
 } from "../../config/sessions.js";
 import { registerAgentRunContext } from "../../infra/agent-events.js";
+import { normalizeProviderId } from "../../providers/plugins/index.js";
+import type { ProviderOutboundTargetMode } from "../../providers/plugins/types.js";
+import { DEFAULT_CHAT_PROVIDER } from "../../providers/registry.js";
 import { normalizeMainKey } from "../../routing/session-key.js";
 import { defaultRuntime } from "../../runtime.js";
 import { resolveSendPolicy } from "../../sessions/send-policy.js";
 import { normalizeMessageProvider } from "../../utils/message-provider.js";
-import { normalizeE164 } from "../../utils.js";
 import {
   type AgentWaitParams,
   ErrorCodes,
@@ -73,12 +74,9 @@ export const agentHandlers: GatewayRequestHandlers = {
     let resolvedSessionId = request.sessionId?.trim() || undefined;
     let sessionEntry: SessionEntry | undefined;
     let bestEffortDeliver = false;
-    let cfgForAgent: ReturnType<typeof loadConfig> | undefined;
-
     if (requestedSessionKey) {
       const { cfg, storePath, store, entry } =
         loadSessionEntry(requestedSessionKey);
-      cfgForAgent = cfg;
       const now = Date.now();
       const sessionId = entry?.sessionId ?? randomUUID();
       const labelValue = request.label?.trim() || entry?.label;
@@ -146,7 +144,7 @@ export const agentHandlers: GatewayRequestHandlers = {
 
     const runId = idem;
 
-    const requestedProvider =
+    const requestedProviderRaw =
       normalizeMessageProvider(request.provider) ?? "last";
 
     const lastProvider = sessionEntry?.lastProvider;
@@ -158,72 +156,35 @@ export const agentHandlers: GatewayRequestHandlers = {
     const wantsDelivery = request.deliver === true;
 
     const resolvedProvider = (() => {
-      if (requestedProvider === "last") {
-        // WebChat is not a deliverable surface. Treat it as "unset" for routing,
-        // so VoiceWake and CLI callers don't get stuck with deliver=false.
-        if (lastProvider && lastProvider !== "webchat") return lastProvider;
-        return wantsDelivery ? "whatsapp" : "webchat";
+      if (requestedProviderRaw === "last") {
+        // WebChat is not a deliverable surface. Treat it as "unset" for routing.
+        if (lastProvider && lastProvider !== "webchat") {
+          return normalizeProviderId(lastProvider) ?? lastProvider;
+        }
+        return wantsDelivery ? DEFAULT_CHAT_PROVIDER : "webchat";
       }
-      if (
-        requestedProvider === "whatsapp" ||
-        requestedProvider === "telegram" ||
-        requestedProvider === "discord" ||
-        requestedProvider === "signal" ||
-        requestedProvider === "imessage" ||
-        requestedProvider === "webchat"
-      ) {
-        return requestedProvider;
+
+      if (requestedProviderRaw === "webchat") return "webchat";
+
+      const normalized = normalizeProviderId(requestedProviderRaw);
+      if (normalized) return normalized;
+      if (lastProvider && lastProvider !== "webchat") {
+        return normalizeProviderId(lastProvider) ?? lastProvider;
       }
-      if (lastProvider && lastProvider !== "webchat") return lastProvider;
-      return wantsDelivery ? "whatsapp" : "webchat";
+      return wantsDelivery ? DEFAULT_CHAT_PROVIDER : "webchat";
     })();
 
-    const resolvedTo = (() => {
-      const explicit =
-        typeof request.to === "string" && request.to.trim()
-          ? request.to.trim()
-          : undefined;
-      if (explicit) return explicit;
-      if (
-        resolvedProvider === "whatsapp" ||
-        resolvedProvider === "telegram" ||
-        resolvedProvider === "discord" ||
-        resolvedProvider === "signal" ||
-        resolvedProvider === "imessage"
-      ) {
-        return lastTo || undefined;
-      }
-      return undefined;
-    })();
-
-    const sanitizedTo = (() => {
-      // If we derived a WhatsApp recipient from session "lastTo", ensure it is still valid
-      // for the configured allowlist. Otherwise, fall back to the first allowed number so
-      // voice wake doesn't silently route to stale/test recipients.
-      if (resolvedProvider !== "whatsapp") return resolvedTo;
-      const explicit =
-        typeof request.to === "string" && request.to.trim()
-          ? request.to.trim()
-          : undefined;
-      if (explicit) return resolvedTo;
-
-      const cfg = cfgForAgent ?? loadConfig();
-      const rawAllow = cfg.whatsapp?.allowFrom ?? [];
-      if (rawAllow.includes("*")) return resolvedTo;
-      const allowFrom = rawAllow
-        .map((val) => normalizeE164(val))
-        .filter((val) => val.length > 1);
-      if (allowFrom.length === 0) return resolvedTo;
-
-      const normalizedLast =
-        typeof resolvedTo === "string" && resolvedTo.trim()
-          ? normalizeE164(resolvedTo)
-          : undefined;
-      if (normalizedLast && allowFrom.includes(normalizedLast)) {
-        return normalizedLast;
-      }
-      return allowFrom[0];
-    })();
+    const explicitTo =
+      typeof request.to === "string" && request.to.trim()
+        ? request.to.trim()
+        : undefined;
+    const resolvedTo =
+      explicitTo ||
+      (resolvedProvider && resolvedProvider !== "webchat"
+        ? lastTo || undefined
+        : undefined);
+    const deliveryTargetMode: ProviderOutboundTargetMode | undefined =
+      explicitTo ? "explicit" : resolvedTo ? "implicit" : undefined;
 
     const deliver = request.deliver === true && resolvedProvider !== "webchat";
 
@@ -243,15 +204,16 @@ export const agentHandlers: GatewayRequestHandlers = {
     void agentCommand(
       {
         message,
-        to: sanitizedTo,
+        to: resolvedTo,
         sessionId: resolvedSessionId,
         sessionKey: requestedSessionKey,
         thinking: request.thinking,
         deliver,
-        provider: resolvedProvider,
+        provider: resolvedProvider ?? requestedProviderRaw,
+        deliveryTargetMode,
         timeout: request.timeout?.toString(),
         bestEffortDeliver,
-        messageProvider: resolvedProvider,
+        messageProvider: resolvedProvider ?? requestedProviderRaw,
         runId,
         lane: request.lane,
         extraSystemPrompt: request.extraSystemPrompt,
