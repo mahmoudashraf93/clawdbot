@@ -274,8 +274,6 @@ const BASE_METHODS = [
   "send",
   "agent",
   "agent.wait",
-  "web.login.start",
-  "web.login.wait",
   // WebChat WebSocket-native chat methods
   "chat.history",
   "chat.abort",
