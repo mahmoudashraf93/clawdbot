@@ -158,7 +158,7 @@ async function resolveDeliveryTarget(
     }
   }
 
-  const toCandidate = explicitTo ?? lastTo || undefined;
+  const toCandidate = explicitTo ?? (lastTo || undefined);
   const mode: "explicit" | "implicit" = explicitTo ? "explicit" : "implicit";
   if (!toCandidate) {
     return { provider, to: undefined, accountId: lastAccountId, mode };
