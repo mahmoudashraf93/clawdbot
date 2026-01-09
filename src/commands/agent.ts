@@ -583,7 +583,8 @@ export async function agentCommand(
           provider: deliveryProvider,
           to: opts.to,
           cfg,
-          accountId: targetMode === "implicit" ? sessionEntry?.lastAccountId : undefined,
+          accountId:
+            targetMode === "implicit" ? sessionEntry?.lastAccountId : undefined,
           mode: targetMode,
         })
       : null;
@@ -633,11 +634,7 @@ export async function agentCommand(
       logPayload(payload);
     }
   }
-  if (
-    deliver &&
-    deliveryProvider &&
-    deliveryProvider !== "webchat"
-  ) {
+  if (deliver && deliveryProvider && deliveryProvider !== "webchat") {
     if (deliveryTarget) {
       await deliverOutboundPayloads({
         cfg,

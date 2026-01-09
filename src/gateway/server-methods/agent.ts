@@ -8,7 +8,6 @@ import {
   saveSessionStore,
 } from "../../config/sessions.js";
 import { registerAgentRunContext } from "../../infra/agent-events.js";
-import { DEFAULT_CHAT_PROVIDER } from "../../providers/registry.js";
 import { normalizeProviderId } from "../../providers/plugins/index.js";
 import type { ProviderOutboundTargetMode } from "../../providers/plugins/types.js";
 import { DEFAULT_CHAT_PROVIDER } from "../../providers/registry.js";

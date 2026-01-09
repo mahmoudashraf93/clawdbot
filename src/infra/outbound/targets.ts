@@ -112,7 +112,9 @@ export function resolveHeartbeatDeliveryTarget(params: {
     return { provider: "none", reason: "no-target" };
   }
 
-  const mode: ProviderOutboundTargetMode = explicitTo ? "explicit" : "heartbeat";
+  const mode: ProviderOutboundTargetMode = explicitTo
+    ? "explicit"
+    : "heartbeat";
   const resolved = resolveOutboundTarget({
     provider,
     to: toCandidate,
