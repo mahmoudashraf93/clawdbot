@@ -61,6 +61,7 @@ import {
   normalizeProviderId,
 } from "../providers/plugins/index.js";
 import type { ProviderOutboundTargetMode } from "../providers/plugins/types.js";
+import { DEFAULT_CHAT_PROVIDER } from "../providers/registry.js";
 import { normalizeMainKey } from "../routing/session-key.js";
 import { defaultRuntime, type RuntimeEnv } from "../runtime.js";
 import { resolveSendPolicy } from "../sessions/send-policy.js";
@@ -555,7 +556,7 @@ export async function agentCommand(
   const deliver = opts.deliver === true;
   const bestEffortDeliver = opts.bestEffortDeliver === true;
   const deliveryProviderRaw =
-    normalizeMessageProvider(opts.provider) ?? "whatsapp";
+    normalizeMessageProvider(opts.provider) ?? DEFAULT_CHAT_PROVIDER;
   const deliveryProvider =
     deliveryProviderRaw === "webchat"
       ? "webchat"
