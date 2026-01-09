@@ -251,7 +251,7 @@ export const CHAT_COMMANDS: ChatCommandDefinition[] = (() => {
   return commands;
 })();
 
-const NATIVE_COMMAND_SURFACES = new Set(
+const NATIVE_COMMAND_SURFACES = new Set<string>(
   listProviderPlugins()
     .filter((plugin) => plugin.capabilities.nativeCommands)
     .map((plugin) => plugin.id),
