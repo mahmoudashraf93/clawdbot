@@ -1,5 +1,7 @@
 import type { ClawdbotConfig } from "../../config/config.js";
 import type { SessionEntry } from "../../config/sessions.js";
+import { getProviderPlugin } from "../../providers/plugins/index.js";
+import type { ProviderId } from "../../providers/plugins/types.js";
 import { normalizeE164 } from "../../utils.js";
 
 export type OutboundProvider =
@@ -36,7 +38,20 @@ export function resolveOutboundTarget(params: {
     | "webchat";
   to?: string;
   allowFrom?: string[];
+  cfg?: ClawdbotConfig;
 }): OutboundTargetResolution {
+  const plugin =
+    params.provider === "webchat"
+      ? undefined
+      : getProviderPlugin(params.provider as ProviderId);
+  const resolver = plugin?.outbound?.resolveTarget;
+  if (resolver) {
+    return resolver({
+      cfg: params.cfg,
+      to: params.to,
+      allowFrom: params.allowFrom,
+    });
+  }
   const trimmed = params.to?.trim() || "";
   if (params.provider === "whatsapp") {
     if (trimmed) {
@@ -190,7 +205,7 @@ export function resolveHeartbeatDeliveryTarget(params: {
   }
 
   if (provider !== "whatsapp") {
-    const resolved = resolveOutboundTarget({ provider, to });
+    const resolved = resolveOutboundTarget({ provider, to, cfg });
     return resolved.ok
       ? { provider, to: resolved.to }
       : { provider: "none", reason: "no-target" };
@@ -201,6 +216,7 @@ export function resolveHeartbeatDeliveryTarget(params: {
     provider: "whatsapp",
     to,
     allowFrom: rawAllow,
+    cfg,
   });
   if (!resolved.ok) {
     return { provider: "none", reason: "no-target" };
